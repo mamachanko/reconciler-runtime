@@ -21,6 +21,7 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
+	"k8s.io/utils/strings/slices"
 	"reflect"
 	"sort"
 	"time"
@@ -39,7 +40,7 @@ const (
 	ConditionSucceeded = "Succeeded"
 )
 
-// Conditions is the interface for a Resource that implements the getter and
+// ConditionsAccessor is the interface for a Resource that implements the getter and
 // setter for accessing a Condition collection.
 type ConditionsAccessor interface {
 	GetConditions() []metav1.Condition
@@ -90,20 +91,23 @@ type ConditionManager interface {
 	// InitializeConditions updates all Conditions in the ConditionSet to Unknown
 	// if not set.
 	InitializeConditions()
+
+	// SortConditions sorts all Conditions in the ConditionSet.
+	SortConditions()
 }
 
 // NewLivingConditionSet returns a ConditionSet to hold the conditions for the
 // living resource. ConditionReady is used as the happy condition.
 // The set of condition types provided are those of the terminal subconditions.
-func NewLivingConditionSet(d ...string) ConditionSet {
-	return NewLivingConditionSetWithHappyReason("Ready", d...)
+func NewLivingConditionSet(subconditionsInOrder ...string) ConditionSet {
+	return NewLivingConditionSetWithHappyReason("Ready", subconditionsInOrder...)
 }
 
 // NewLivingConditionSetWithHappyReason returns a ConditionSet to hold the conditions for the
 // living resource. ConditionReady is used as the happy condition with the provided happy reason.
 // The set of condition types provided are those of the terminal subconditions.
-func NewLivingConditionSetWithHappyReason(happyReason string, d ...string) ConditionSet {
-	return newConditionSet(ConditionReady, happyReason, d...)
+func NewLivingConditionSetWithHappyReason(happyReason string, subconditionsInOrder ...string) ConditionSet {
+	return newConditionSet(ConditionReady, happyReason, subconditionsInOrder...)
 }
 
 // NewBatchConditionSet returns a ConditionSet to hold the conditions for the
@@ -123,9 +127,9 @@ func NewBatchConditionSetWithHappyReason(happyReason string, d ...string) Condit
 // newConditionSet returns a ConditionSet to hold the conditions that are
 // important for the caller. The first ConditionType is the overarching status
 // for that will be used to signal the resources' status is Ready or Succeeded.
-func newConditionSet(happyType, happyReason string, dependents ...string) ConditionSet {
+func newConditionSet(happyType, happyReason string, dependentsInOrder ...string) ConditionSet {
 	var deps []string
-	for _, d := range dependents {
+	for _, d := range dependentsInOrder {
 		// Skip duplicates
 		if d == happyType || contains(deps, d) {
 			continue
@@ -192,7 +196,7 @@ func (r conditionsImpl) GetCondition(t string) *metav1.Condition {
 }
 
 // SetCondition sets or updates the Condition on Conditions for Condition.Type.
-// If there is an update, Conditions are stored back sorted.
+// If there is an update, Conditions are stored back sorted by calling SortConditions.
 func (r conditionsImpl) SetCondition(new metav1.Condition) {
 	if r.accessor == nil {
 		return
@@ -212,8 +216,7 @@ func (r conditionsImpl) SetCondition(new metav1.Condition) {
 	}
 	new.LastTransitionTime = metav1.NewTime(time.Now())
 	conditions = append(conditions, new)
-	// Sorted for convenience of the consumer, i.e. kubectl.
-	sort.Slice(conditions, func(i, j int) bool { return conditions[i].Type < conditions[j].Type })
+	r.SortConditions()
 	r.accessor.SetConditions(conditions)
 }
 
@@ -226,8 +229,8 @@ func (r conditionsImpl) isTerminal(t string) bool {
 	return t == r.happyType
 }
 
-// RemoveCondition removes the non terminal condition that matches the ConditionType
-// Not implemented for terminal conditions
+// ClearCondition removes the non-terminal condition that matches the ConditionType. It maintains the order of
+// conditions by calling SortConditions. Not implemented for terminal conditions.
 func (r conditionsImpl) ClearCondition(t string) error {
 	var conditions []metav1.Condition
 
@@ -248,8 +251,7 @@ func (r conditionsImpl) ClearCondition(t string) error {
 		}
 	}
 
-	// Sorted for convenience of the consumer, i.e. kubectl.
-	sort.Slice(conditions, func(i, j int) bool { return conditions[i].Type < conditions[j].Type })
+	r.SortConditions()
 	r.accessor.SetConditions(conditions)
 
 	return nil
@@ -364,6 +366,18 @@ func (r conditionsImpl) InitializeConditions() {
 	for _, t := range r.dependents {
 		r.initializeTerminalCondition(t, "Initializing", status)
 	}
+}
+
+// SortConditions TODO
+func (r conditionsImpl) SortConditions() {
+	conditions := r.accessor.GetConditions()
+	sort.Slice(conditions, func(i, j int) bool {
+		var conditionsInOrder []string
+		copy(conditionsInOrder, r.dependents)
+		conditionsInOrder = append(conditionsInOrder, r.happyType)
+		return slices.Index(conditionsInOrder, conditions[i].Type) < slices.Index(conditionsInOrder, conditions[j].Type)
+	})
+	fmt.Println(conditions)
 }
 
 // initializeTerminalCondition initializes a Condition to the given status if unset.

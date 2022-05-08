@@ -69,3 +69,7 @@ func TestConditionStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestConditionOrder(t *testing.T) {
+
+}
