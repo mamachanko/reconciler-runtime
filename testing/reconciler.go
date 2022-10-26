@@ -98,6 +98,9 @@ type ReconcilerTestCase struct {
 // VerifyFunc is a verification function
 type VerifyFunc func(t *testing.T, result controllerruntime.Result, err error)
 
+// StashVerifyFunc is a #! TODO mbrauer -
+type StashVerifyFunc func(t *testing.T, ctx context.Context)
+
 // ReconcilerTests represents a map of reconciler test cases. The map key is the name of each test
 // case. Test cases are executed in random order.
 type ReconcilerTests map[string]ReconcilerTestCase

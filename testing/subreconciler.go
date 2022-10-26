@@ -59,6 +59,7 @@ type SubReconcilerTestCase struct {
 	ExpectResource client.Object
 	// ExpectStashedValues ensures each value is stashed. Values in the stash that are not expected are ignored. Factories are resolved to their object.
 	ExpectStashedValues map[reconcilers.StashKey]interface{}
+	VerifyStashedValues StashVerifyFunc
 	// ExpectTracks holds the ordered list of Track calls expected during reconciliation
 	ExpectTracks []TrackRequest
 	// ExpectEvents holds the ordered list of events recorded during the reconciliation
@@ -261,6 +262,9 @@ func (tc *SubReconcilerTestCase) Run(t *testing.T, scheme *runtime.Scheme, facto
 		if diff := cmp.Diff(expected, actual, IgnoreLastTransitionTime, SafeDeployDiff, IgnoreTypeMeta, IgnoreCreationTimestamp, IgnoreResourceVersion, cmpopts.EquateEmpty()); diff != "" {
 			t.Errorf("Unexpected stash value %q (-expected, +actual): %s", key, diff)
 		}
+	}
+	if tc.VerifyStashedValues != nil {
+		tc.VerifyStashedValues(t, ctx)
 	}
 
 	expectConfig.AssertExpectations(t)
